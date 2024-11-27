@@ -1,24 +1,18 @@
 import streamlit as st
 from together import Together
-from dotenv import load_dotenv
 import os
 import base64
 import json
 
-# Load environment variables from .env file
-load_dotenv()
+# Streamlit app
+st.title("Image to JSON Converter")
 
-# Retrieve the API key from the environment
-api_key = os.getenv("TOGETHER_API_KEY")
+# Prompt the user for the API key
+api_key = st.text_input("Enter your Together API key:", type="password")
 
-if not api_key:
-    st.error("API key not found. Please set it in the .env file.")
-else:
-    # Initialize the Together client with the API key
+if api_key:
+    # Initialize the Together client with the provided API key
     client = Together(api_key=api_key)
-
-    # Your application logic here
-    st.title("Image to JSON Converter")
 
     # Define the prompt for JSON conversion
     getDescriptionPrompt = """
@@ -91,4 +85,6 @@ else:
                     st.json(json.loads(line))
         else:
             st.write("No history available.")
+else:
+    st.warning("Please enter your API key to proceed.")
 
