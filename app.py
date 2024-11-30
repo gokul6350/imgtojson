@@ -1,90 +1,301 @@
 import streamlit as st
-from together import Together
-import os
+import pypdfium2 as pdfium
+from io import BytesIO
 import base64
+from together import Together
 import json
+from PIL import Image
+import sqlite3
 
-# Streamlit app
-st.title("Image to JSON Converter")
+def initialize_db():
+    conn = sqlite3.connect('bills.db')
+    cursor = conn.cursor()
+    
 
-# Prompt the user for the API key
-api_key = st.text_input("Enter your Together API key:", type="password")
+    # Create new table with bill_date instead of upload_date
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bills (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_number TEXT NOT NULL,
+            company_name TEXT NOT NULL,
+            total_cost REAL NOT NULL,
+            bill_date DATE NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
 
-if api_key:
-    # Initialize the Together client with the provided API key
-    client = Together(api_key=api_key)
+def add_bill_to_db(invoice_number, company_name, total_cost, bill_date):
+    conn = sqlite3.connect('bills.db')
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO bills (invoice_number, company_name, total_cost, bill_date)
+        VALUES (?, ?, ?, ?)
+    """, (invoice_number, company_name, total_cost, bill_date))
+    conn.commit()
+    conn.close()
 
+def main():
+    # Initialize the database
+    initialize_db()
+    
+    st.set_page_config(
+        page_title="PDF & Image to JSON Analyzer",
+        page_icon="📄",
+        layout="wide"
+    )
+    
+    st.title("📄 PDF & Image to JSON Analyzer")
+    
+    # Add a sidebar with info and API key input
+    with st.sidebar:
+        st.info("This app converts PDF pages or images to JSON by analyzing them.")
+        api_key = st.text_input("Enter your Together AI API key:", type="password")
+        
+        st.markdown("### How to use:")
+        st.markdown("""
+        1. Enter your Together AI API key
+        2. Upload a PDF file or an image file (PNG, JPG)
+        3. Wait for conversion and analysis
+        4. View results and download images (if PDF)
+        5. Edit the extracted fields if necessary and add them to the database
+        """)
+    
+    if not api_key:
+        st.warning("Please enter your Together AI API key to proceed.")
+        return
+    
+    # Initialize Together AI client
+    together = Together(api_key=api_key)
+    
     # Define the prompt for JSON conversion
     getDescriptionPrompt = """
-    You are an AI model that converts images into structured JSON data. 
-    Analyze the attached image and provide a JSON representation of its contents. 
-    Include details such as objects, text, colors, and layout. 
-    Ensure the JSON is well-structured and includes all relevant information.
+        You are an AI model working for Global Autotech Limited that extracts billing information from images.
+        Analyze the attached bill/invoice image and provide ONLY a JSON response with the following case-sensitive fields:
+        - vendor_name: Name of the company/vendor
+        - bill_date: Date of the bill
+        - total_amount: Total amount of the bill
+        - invoice_number: Invoice number of the bill
+        Ensure the JSON is well-structured, includes only these fields, and contains no additional information.
+        Do not include any text, explanations, or code blocks. Respond with pure "JSON" only.
     """
-
-    # File uploader
-    uploaded_file = st.file_uploader("Choose an image...", type=["png", "jpg", "jpeg"])
-
-    if uploaded_file is not None:
-        # Display the uploaded image
-        st.image(uploaded_file, caption='Uploaded Image.', use_container_width=True)
-        
-        # Save the uploaded file to a local directory
-        if not os.path.exists("uploaded_images"):
-            os.makedirs("uploaded_images")
-        save_path = os.path.join("uploaded_images", uploaded_file.name)
-        with open(save_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        # Encode the image in base64
-        base64_image = base64.b64encode(open(save_path, "rb").read()).decode('utf-8')
-
-        # Create a request to get the JSON description
-        response = client.chat.completions.create(
-            model="meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": getDescriptionPrompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{base64_image}",
-                            },
-                        },
-                    ],
-                }
-            ]
-        )
-
-        # Extract the JSON description from the response
-        json_description = response.choices[0].message.content
-
-        # Parse the content into a JSON object
+    
+    # File uploader accepts PDF and image files
+    uploaded_file = st.file_uploader(
+        "Choose a PDF or Image file",
+        type=["pdf", "png", "jpg", "jpeg"],
+        help="Upload a PDF or Image file to convert and analyze"
+    )
+    
+    if uploaded_file is not None and api_key:
         try:
-            json_data = json.loads(json_description)
-        except json.JSONDecodeError:
-            # If the content is not a valid JSON, wrap it in a JSON structure
-            json_data = {"description": json_description}
+            # Show progress bar
+            with st.spinner('Processing and analyzing...'):
+                file_type = uploaded_file.type
+                if file_type == "application/pdf":
+                    # Process PDF file
+                    pdf = pdfium.PdfDocument(uploaded_file.read())
+                    
+                    # Show total pages
+                    total_pages = len(pdf)
+                    st.info(f"Total pages: {total_pages}")
+                    
+                    # Convert each page
+                    for page_number in range(total_pages):
+                        # Create two columns for image and analysis
+                        col1, col2 = st.columns(2)
+                        
+                        # Load and process the page
+                        page = pdf[page_number]
+                        bitmap = page.render(scale=1.0, rotation=0)
+                        pil_image = bitmap.to_pil()
+                        
+                        # Left column: Display image and download button
+                        with col1:
+                            st.subheader(f"Page {page_number + 1}")
+                            st.image(pil_image, caption=f"Page {page_number + 1}", use_container_width=True)
+                            
+                            # Create download button
+                            buf = BytesIO()
+                            pil_image.save(buf, format="PNG")
+                            
+                            st.download_button(
+                                label=f"⬇️ Download Page {page_number + 1}",
+                                data=buf.getvalue(),
+                                file_name=f"page_{page_number + 1}.png",
+                                mime="image/png",
+                                key=f"download_{page_number}"
+                            )
+                        
+                        # Right column: Together AI analysis
+                        with col2:
+                            st.subheader(f"Analysis of Page {page_number + 1}")
+                            
+                            # Convert image to base64
+                            buffered = BytesIO()
+                            pil_image.save(buffered, format="PNG", encoding='utf-8')
+                            base64_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                            
+                            # Get analysis from Together AI
+                            response = together.chat.completions.create(
+                                model="meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
+                                messages=[
+                                    {
+                                        "role": "user",
+                                        "content": [
+                                            {"type": "text", "text": getDescriptionPrompt},
+                                            {
+                                                "type": "image_url",
+                                                "image_url": {
+                                                    "url": f"data:image/png;base64,{base64_image}",
+                                                },
+                                            },
+                                        ],
+                                    }
+                                ]
+                            )
+                            
+                            # Extract and display the JSON description
+                            json_description = response.choices[0].message.content.strip()
+                            print("============")
+                            print(json_description)
+                            print("============")
+                            try:
+                                json_data = json.loads(json_description)
+                                # Validate that only required fields are present
+                                valid_keys = {"vendor_name", "bill_date", "total_amount", "invoice_number"}
+                                json_data = {k: v for k, v in json_data.items() if k in valid_keys}
+                            except json.JSONDecodeError:
+                                json_data = {"error": "Invalid JSON response from AI model."}
+                            
+                            if "error" not in json_data:
+                                form_key = f"form_page_{page_number}"
+                                with st.form(key=form_key):
+                                    st.markdown("### Edit Extracted Data")
+                                    company_name = st.text_input("Company Name", value=json_data.get("vendor_name", ""))
+                                    bill_date = st.text_input("Bill Date", value=json_data.get("bill_date", ""))
+                                    # Clean the total_amount string by removing commas before converting to float
+                                    total_amount_str = str(json_data.get("total_amount", "0.0")).replace(",", "")
+                                    total_cost = st.number_input("Total Cost", value=float(total_amount_str), format="%.2f")
+                                    invoice_number = st.text_input("Invoice Number", value=json_data.get("invoice_number", ""))
+                                    
+                                    submit_button = st.form_submit_button("Add to Database")
+                                    
+                                    if submit_button:
+                                        add_bill_to_db(
+                                            invoice_number=invoice_number,
+                                            company_name=company_name,
+                                            total_cost=total_cost,
+                                            bill_date=bill_date
+                                        )
+                                        st.success("✅ Added to database!")
+                            else:
+                                st.error(json_data["error"])
+                            
+                            st.json(json_data)
+                        
+                        st.divider()
+                
+                elif file_type in ["image/png", "image/jpg", "image/jpeg"]:
+                    # Process Image file
+                    pil_image = Image.open(uploaded_file)
+                    
+                    # Create two columns for image and analysis
+                    col1, col2 = st.columns(2)
+                    
+                    # Left column: Display image
+                    with col1:
+                        st.subheader("Uploaded Image")
+                        st.image(pil_image, caption="Uploaded Image", use_container_width=True)
+                        
+                        # Create download button
+                        buf = BytesIO()
+                        pil_image.save(buf, format="PNG")
+                        
+                        st.download_button(
+                            label="⬇️ Download Image",
+                            data=buf.getvalue(),
+                            file_name="uploaded_image.png",
+                            mime="image/png",
+                            key="download_image"
+                        )
+                    
+                    # Right column: Together AI analysis
+                    with col2:
+                        st.subheader("Analysis of Uploaded Image")
+                        
+                        # Convert image to base64
+                        buffered = BytesIO()
+                        pil_image.save(buffered, format="PNG", encoding='utf-8')
+                        base64_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                        
+                        # Get analysis from Together AI
+                        response = together.chat.completions.create(
+                            model="meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {"type": "text", "text": getDescriptionPrompt},
+                                        {
+                                            "type": "image_url",
+                                            "image_url": {
+                                                "url": f"data:image/png;base64,{base64_image}",
+                                            },
+                                        },
+                                    ],
+                                }
+                            ]
+                        )
+                        
+                        # Extract and display the JSON description
+                        json_description = response.choices[0].message.content.strip()
+                        print("============")
+                        print(json_description)
+                        print("============")
+                        try:
+                            json_data = json.loads(json_description)
+                            # Validate that only required fields are present
+                            valid_keys = {"vendor_name", "bill_date", "total_amount", "invoice_number"}
+                            json_data = {k: v for k, v in json_data.items() if k in valid_keys}
+                        except json.JSONDecodeError:
+                            json_data = {"error": "Invalid JSON response from AI model."}
+                        
+                        if "error" not in json_data:
+                            with st.form(key="form_image"):
+                                st.markdown("### Edit Extracted Data")
+                                company_name = st.text_input("Company Name", value=json_data.get("vendor_name", ""))
+                                bill_date = st.text_input("Bill Date", value=json_data.get("bill_date", ""))
+                                # Clean the total_amount string by removing commas before converting to float
+                                total_amount_str = str(json_data.get("total_amount", "0.0")).replace(",", "")
+                                total_cost = st.number_input("Total Cost", value=float(total_amount_str), format="%.2f")
+                                invoice_number = st.text_input("Invoice Number", value=json_data.get("invoice_number", ""))
+                                
+                                submit_button = st.form_submit_button("Add to Database")
+                                
+                                if submit_button:
+                                    add_bill_to_db(
+                                        invoice_number=invoice_number,
+                                        company_name=company_name,
+                                        total_cost=total_cost,
+                                        bill_date=bill_date
+                                    )
+                                    st.success("✅ Added to database!")
+                        else:
+                                st.error(json_data["error"])
+                        
+                        st.json(json_data)
+                    
+                    st.divider()
+                
+                else:
+                    st.error("Unsupported file type.")
+            
+            st.success("✅ Conversion and analysis completed!")
+                
+        except Exception as e:
+            st.error(f"❌ An error occurred: {str(e)}")
+            st.warning("Please try again with a different file.")
 
-        # Display the JSON description
-        st.json(json_data)
-
-        # Option to save the JSON to history
-        if st.button("Add to History"):
-            with open("history.json", "a") as history_file:
-                history_file.write(json.dumps(json_data) + "\n")
-            st.success("Added to history!")
-
-    # Display the history in an expandable section
-    with st.expander("View History"):
-        if os.path.exists("history.json"):
-            with open("history.json", "r") as history_file:
-                for line in history_file:
-                    st.json(json.loads(line))
-        else:
-            st.write("No history available.")
-else:
-    st.warning("Please enter your API key to proceed.")
-
+if __name__ == "__main__":
+    main()

@@ -1,2 +1,6 @@
 streamlit
+pypdfium2
+Pillow
 together
+pandas
+python-dateutil

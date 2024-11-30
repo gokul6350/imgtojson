@@ -1,0 +1,110 @@
+import streamlit as st
+from together import Together
+import os
+import base64
+import json
+#from pdf2image import convert_from_path
+from database import BillDatabase
+from datetime import datetime
+
+# Initialize database
+db = BillDatabase()
+
+# Create necessary directories
+os.makedirs("uploaded_pdfs", exist_ok=True)
+os.makedirs("uploaded_images", exist_ok=True)
+
+# Streamlit app
+st.title("Bill Management System")
+
+# Create tabs for different pages
+tab1, tab2 = st.tabs(["Upload Bills", "View Bills"])
+
+# Check for API key in secrets first, then ask if not found
+try:
+    api_key = st.secrets["TOGETHER_API_KEY"]
+except:
+    api_key = st.sidebar.text_input("Enter your Together API key:", type="password")
+    if api_key:
+        # Option to save to secrets.toml
+        if st.sidebar.button("Save API Key to Secrets"):
+            st.sidebar.warning("To save the API key permanently, add this to your .streamlit/secrets.toml file:\nTOGETHER_API_KEY = 'your_api_key'")
+
+with tab1:
+    st.header("Upload Bills")
+    if api_key:
+        # Create two columns
+        left_col, right_col = st.columns(2)
+
+        # Initialize the Together client with the provided API key
+        client = Together(api_key=api_key)
+
+        # Form fields in the left column
+        with left_col:
+            # Initialize empty form fields
+            invoice_number = ""
+            company_name = ""
+            bill_date = datetime.now()
+            total_cost = 0.0
+            notes = ""
+
+        # File uploader and preview in the right column
+        with right_col:
+            uploaded_file = st.file_uploader("Choose a PDF or image...", type=["pdf", "png", "jpg", "jpeg"])
+            
+            if uploaded_file is not None:
+                # Display the uploaded image
+                file_type = uploaded_file.type
+                if file_type.startswith('image'):
+                    st.image(uploaded_file, caption='Uploaded Bill', use_container_width=True)
+                    
+                    # TODO: Process image with Together AI here
+                    # response = client.analyze_image(uploaded_file, getDescriptionPrompt)
+                    # extracted_data = process_response(response)
+                    
+                    # Update the form fields with extracted data
+                    with left_col:
+                        invoice_number = st.text_input("Invoice Number*", value=invoice_number, help="Required field")
+                        company_name = st.text_input("Company Name*", value=company_name, help="Required field")
+                        bill_date = st.date_input("Bill Date*", value=bill_date, help="Required field")
+                        total_cost = st.number_input("Total Cost*", value=total_cost, min_value=0.0, help="Required field")
+                        notes = st.text_area("Notes (optional)", value=notes)
+
+                        if st.button("Save to Database"):
+                            if not invoice_number or not company_name or total_cost <= 0:
+                                st.error("Please fill in all required fields marked with *")
+                            else:
+                                # Save to database
+                                db.add_bill(
+                                    invoice_number=invoice_number,
+                                    company_name=company_name,
+                                    total_cost=total_cost,
+                                    bill_date=bill_date,
+                                    notes=notes
+                                )
+                                st.success("Bill saved to database!")
+                
+                elif file_type == 'application/pdf':
+                    st.write("PDF preview not available")
+                    # Optional: Add PDF preview functionality here if needed
+    else:
+        st.warning("Please enter your API key to proceed.")
+
+with tab2:
+    st.header("View Bills")
+    
+    # Search functionality
+    search_term = st.text_input("Search bills by vendor name or notes")
+    
+    if search_term:
+        bills = db.search_bills(search_term)
+    else:
+        bills = db.get_all_bills()
+    
+    # Display bills
+    for bill in bills:
+        with st.expander(f"Bill from {bill['company_name']} - {bill['invoice_number']}"):
+            st.write("**Invoice Number:**", bill['invoice_number'])
+            st.write("**Company Name:**", bill['company_name'])
+            st.write("**Total Cost:** $", f"{bill['total_cost']:.2f}")
+            st.write("**Upload Date:**", bill['upload_date'])
