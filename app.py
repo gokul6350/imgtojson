@@ -66,7 +66,7 @@ def main():
         return
     
     # Initialize Together AI client
-    together = Together(api_key=ey)
+    together = Together(ey)
     
     # Define the prompt for JSON conversion
     getDescriptionPrompt = """
