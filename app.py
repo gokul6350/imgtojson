@@ -50,7 +50,7 @@ def main():
     # Add a sidebar with info and API key input
     with st.sidebar:
         st.info("This app converts PDF pages or images to JSON by analyzing them.")
-        api_key = st.text_input("Enter your Together AI API key:", type="password")
+        ey = st.text_input("Enter your Together AI API key:", type="password")
         
         st.markdown("### How to use:")
         st.markdown("""
@@ -61,12 +61,12 @@ def main():
         5. Edit the extracted fields if necessary and add them to the database
         """)
     
-    if not api_key:
+    if not ey:
         st.warning("Please enter your Together AI API key to proceed.")
         return
     
     # Initialize Together AI client
-    together = Together(api_key=api_key)
+    together = Together(api_key=ey)
     
     # Define the prompt for JSON conversion
     getDescriptionPrompt = """
