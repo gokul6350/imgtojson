@@ -36,7 +36,7 @@ filtered_df = df.copy()
 
 # Show total amount
 total_amount = filtered_df['total_cost'].sum()
-st.metric("Total Amount", f"${total_amount:,.2f}")
+st.metric("Total Amount", f"₹{total_amount:,.2f}")
 
 # Display the data
 st.dataframe(
@@ -44,7 +44,7 @@ st.dataframe(
     column_config={
         "total_cost": st.column_config.NumberColumn(
             "Total Cost",
-            format="$%.2f"
+            format="₹%.2f"
         ),
         "bill_date": st.column_config.DateColumn(
             "Bill Date",
