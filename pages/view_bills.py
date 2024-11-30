@@ -31,8 +31,11 @@ df = get_bills()
 # Convert bill_date to datetime
 df['bill_date'] = pd.to_datetime(df['bill_date'])
 
-# Modify the filtered_df assignment to just use the original df
-filtered_df = df.copy()
+# Add search box
+search_term = st.text_input("Search bills by company name", "")
+
+# Filter dataframe based on search
+filtered_df = df[df['company_name'].str.contains(search_term, case=False, na=False)]
 
 # Show total amount
 total_amount = filtered_df['total_cost'].sum()
