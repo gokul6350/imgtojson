@@ -6,6 +6,8 @@ from together import Together
 import json
 from PIL import Image
 import sqlite3
+import os
+import google.generativeai as genai
 
 def initialize_db():
     conn = sqlite3.connect('bills.db')
@@ -35,6 +37,19 @@ def add_bill_to_db(invoice_number, company_name, total_cost, bill_date):
     conn.commit()
     conn.close()
 
+def remove_json_markers(text):
+    # Remove ```json from the beginning
+    if text.startswith("```json"):
+        text = text.replace("```json", "")
+    # Remove ``` from the end
+    
+        text = text.replace("\n```", "")
+        return text.strip()
+    else:
+        return text
+# Example usage
+
+
 def main():
     # Initialize the database
     initialize_db()
@@ -50,23 +65,24 @@ def main():
     # Add a sidebar with info and API key input
     with st.sidebar:
         st.info("This app converts PDF pages or images to JSON by analyzing them.")
-        ey = st.text_input("Enter your Together AI API key:", type="password")
+        ai_service = st.radio("Select AI Service:", ["Together AI", "Gemini AI"])
         
-        st.markdown("### How to use:")
-        st.markdown("""
-        1. Enter your Together AI API key
-        2. Upload a PDF file or an image file (PNG, JPG)
-        3. Wait for conversion and analysis
-        4. View results and download images (if PDF)
-        5. Edit the extracted fields if necessary and add them to the database
-        """)
+        if ai_service == "Together AI":
+            ey = st.text_input("Enter your Together AI API key:", type="password")
+        else:
+            ey = st.text_input("Enter your Gemini AI API key:", type="password")
+            if ey:
+                os.environ["GEMINI_API_KEY"] = ey
+                genai.configure(api_key=ey)
+                
+   
     
     if not ey:
         st.warning("Please enter your Together AI API key to proceed.")
         return
     
     # Initialize Together AI client
-    together = Together(ey)
+    together = Together(api_key=ey)
     
     # Define the prompt for JSON conversion
     getDescriptionPrompt = """
@@ -87,7 +103,7 @@ def main():
         help="Upload a PDF or Image file to convert and analyze"
     )
     
-    if uploaded_file is not None and api_key:
+    if uploaded_file is not None and ey:
         try:
             # Show progress bar
             with st.spinner('Processing and analyzing...'):
@@ -136,32 +152,59 @@ def main():
                             pil_image.save(buffered, format="PNG", encoding='utf-8')
                             base64_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
                             
-                            # Get analysis from Together AI
-                            response = together.chat.completions.create(
-                                model="meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
-                                messages=[
-                                    {
-                                        "role": "user",
-                                        "content": [
-                                            {"type": "text", "text": getDescriptionPrompt},
-                                            {
-                                                "type": "image_url",
-                                                "image_url": {
-                                                    "url": f"data:image/png;base64,{base64_image}",
+                            # Get analysis based on selected AI service
+                            if ai_service == "Together AI":
+                                response = together.chat.completions.create(
+                                    model="meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
+                                    messages=[
+                                        {
+                                            "role": "user",
+                                            "content": [
+                                                {"type": "text", "text": getDescriptionPrompt},
+                                                {
+                                                    "type": "image_url",
+                                                    "image_url": {
+                                                        "url": f"data:image/png;base64,{base64_image}",
+                                                    },
                                                 },
-                                            },
-                                        ],
-                                    }
+                                            ],
+                                        }
+                                    ]
+                                )
+                                json_description = response.choices[0].message.content.strip()
+                            else:
+                                # Configure Gemini
+                                generation_config = {
+                                    "temperature": 1,
+                                    "top_p": 0.95,
+                                    "top_k": 40,
+                                    "max_output_tokens": 8192,
+                                }
+                                model = genai.GenerativeModel("gemini-1.5-pro", generation_config=generation_config)
+                                
+                                # Convert PIL Image to bytes
+                                buffered = BytesIO()
+                                pil_image.save(buffered, format="PNG")
+                                image_bytes = buffered.getvalue()
+                                
+                                # Create content parts with image bytes
+                                content_parts = [
+                                    {
+                                        "mime_type": "image/png",
+                                        "data": image_bytes
+                                    },
+                                    getDescriptionPrompt
                                 ]
-                            )
+                                
+                                # Generate response
+                                response = model.generate_content(content_parts)
+                                json_description = response.text.strip()
                             
-                            # Extract and display the JSON description
-                            json_description = response.choices[0].message.content.strip()
                             print("============")
                             print(json_description)
                             print("============")
                             try:
-                                json_data = json.loads(json_description)
+                                json_data = json.loads(remove_json_markers(json_description))
                                 # Validate that only required fields are present
                                 valid_keys = {"vendor_name", "bill_date", "total_amount", "invoice_number"}
                                 json_data = {k: v for k, v in json_data.items() if k in valid_keys}
@@ -229,32 +272,59 @@ def main():
                         pil_image.save(buffered, format="PNG", encoding='utf-8')
                         base64_image = base64.b64encode(buffered.getvalue()).decode('utf-8')
                         
-                        # Get analysis from Together AI
-                        response = together.chat.completions.create(
-                            model="meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
-                            messages=[
-                                {
-                                    "role": "user",
-                                    "content": [
-                                        {"type": "text", "text": getDescriptionPrompt},
-                                        {
-                                            "type": "image_url",
-                                            "image_url": {
-                                                "url": f"data:image/png;base64,{base64_image}",
+                        # Get analysis based on selected AI service
+                        if ai_service == "Together AI":
+                            response = together.chat.completions.create(
+                                model="meta-llama/Llama-3.2-11B-Vision-Instruct-Turbo",
+                                messages=[
+                                    {
+                                        "role": "user",
+                                        "content": [
+                                            {"type": "text", "text": getDescriptionPrompt},
+                                            {
+                                                "type": "image_url",
+                                                "image_url": {
+                                                    "url": f"data:image/png;base64,{base64_image}",
+                                                },
                                             },
-                                        },
-                                    ],
-                                }
+                                        ],
+                                    }
+                                ]
+                            )
+                            json_description = response.choices[0].message.content.strip()
+                        else:
+                            # Configure Gemini
+                            generation_config = {
+                                "temperature": 1,
+                                "top_p": 0.95,
+                                "top_k": 40,
+                                "max_output_tokens": 8192,
+                            }
+                            model = genai.GenerativeModel("gemini-1.5-pro", generation_config=generation_config)
+                            
+                            # Convert PIL Image to bytes
+                            buffered = BytesIO()
+                            pil_image.save(buffered, format="PNG")
+                            image_bytes = buffered.getvalue()
+                            
+                            # Create content parts with image bytes
+                            content_parts = [
+                                {
+                                    "mime_type": "image/png",
+                                    "data": image_bytes
+                                },
+                                getDescriptionPrompt
                             ]
-                        )
+                            
+                            # Generate response
+                            response = model.generate_content(content_parts)
+                            json_description = response.text.strip()
                         
-                        # Extract and display the JSON description
-                        json_description = response.choices[0].message.content.strip()
                         print("============")
                         print(json_description)
                         print("============")
                         try:
-                            json_data = json.loads(json_description)
+                            json_data = json.loads(remove_json_markers(json_description))
                             # Validate that only required fields are present
                             valid_keys = {"vendor_name", "bill_date", "total_amount", "invoice_number"}
                             json_data = {k: v for k, v in json_data.items() if k in valid_keys}
