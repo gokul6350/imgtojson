@@ -68,9 +68,9 @@ def main():
         ai_service = st.radio("Select AI Service:", ["Test ai model 1", "Test ai model 2"])
         
         if ai_service == "Together AI":
-            ey = st.text_input("Enter your Together AI API key:", type="password")
+            ey = st.text_input("Enter your Model 1 AI API key:", type="password")
         else:
-            ey = st.text_input("Enter your Gemini AI API key:", type="password")
+            ey = st.text_input("Enter your Model 2 AI API key:", type="password")
             if ey:
                 os.environ["GEMINI_API_KEY"] = ey
                 genai.configure(api_key=ey)
