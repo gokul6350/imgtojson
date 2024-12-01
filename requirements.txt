@@ -1,8 +1,8 @@
 streamlit
-pypdfium2
+pypdfium2==4.30.0
 Pillow
-together
+together==1.3.5
 pandas
 python-dateutil
 json2html
-google-generativeai
+google-generativeai==0.8.3
