@@ -55,17 +55,17 @@ def main():
     initialize_db()
     
     st.set_page_config(
-        page_title="PDF & Image to JSON Analyzer",
+        page_title="Bill Analyzer",
         page_icon="📄",
         layout="wide"
     )
     
-    st.title("📄 PDF & Image to JSON Analyzer")
+    st.title("📄 Bill Analyzer")
     
     # Add a sidebar with info and API key input
     with st.sidebar:
         st.info("This app converts PDF pages or images to JSON by analyzing them.")
-        ai_service = st.radio("Select AI Service:", ["Together AI", "Gemini AI"])
+        ai_service = st.radio("Select AI Service:", ["Test ai model 1", "Test ai model 2"])
         
         if ai_service == "Together AI":
             ey = st.text_input("Enter your Together AI API key:", type="password")
