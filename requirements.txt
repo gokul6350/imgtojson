@@ -4,3 +4,5 @@ Pillow
 together
 pandas
 python-dateutil
+json2html
+google-generativeai
