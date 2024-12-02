@@ -28,8 +28,9 @@ def get_bills():
 # Get the data
 df = get_bills()
 
-# Convert bill_date to datetime
+# Convert bill_date to datetime and total_cost to float
 df['bill_date'] = pd.to_datetime(df['bill_date'])
+df['total_cost'] = pd.to_numeric(df['total_cost'], errors='coerce')
 
 # Add search box
 search_term = st.text_input("Search bills by company name", "")
