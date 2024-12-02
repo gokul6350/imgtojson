@@ -78,7 +78,7 @@ def main():
    
     
     if not ey:
-        st.warning("Please enter your Together AI API key to proceed.")
+        st.warning("Please enter your Model AI API key to proceed.")
         return
     
     # Initialize Together AI client
