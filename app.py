@@ -11,7 +11,7 @@ import google.generativeai as genai
 
 def initialize_db():
     conn = sqlite3.connect('bills.db')
-    cursor = conn.cursor()
+    cursor = conn.cursor() #gggjg
     
 
     # Create new table with bill_date instead of upload_date
